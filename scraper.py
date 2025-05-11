@@ -2,25 +2,27 @@ import requests
 from bs4 import BeautifulSoup
 import time
 import os
-import argparse # Added for command-line arguments
+# import argparse # No longer needed for operational settings
+
 from generate_bible_urls import BIBLE_BOOKS, BASE_URL # Import from generate_bible_urls
 
-# Constants for retry and User-Agent
+# Constants for retry, User-Agent, and delays (these will be defaults for prompts)
 MAX_RETRIES = 3
 RETRY_DELAY_SECONDS = 10 # Increased delay for retries
 REQUEST_TIMEOUT_SECONDS = 15 # Timeout for each request
-USER_AGENT = "BibleVerseScraper/2.0 (for educational purposes)"
+INTER_REQUEST_DELAY_SECONDS = 1 # Delay between successful scrapes
+USER_AGENT = "BibleVerseScraper/4.0 (for educational purposes)"
 
-def scrape_website(url):
+def scrape_website(url, max_retries_param, retry_delay_param, timeout_param):
     headers = {
         'User-Agent': USER_AGENT
     }
     raw_html_content = None
     all_page_text_content = None
 
-    for attempt in range(MAX_RETRIES):
+    for attempt in range(max_retries_param):
         try:
-            response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
+            response = requests.get(url, headers=headers, timeout=timeout_param)
             response.raise_for_status()  # Raise an exception for HTTP errors (4xx or 5xx)
             raw_html_content = response.text # Store raw HTML
             soup = BeautifulSoup(response.content, 'html.parser')
@@ -72,29 +74,103 @@ def scrape_website(url):
             return book_title_val, citation_text_val, main_bible_text_val, raw_html_content, all_page_text_content
 
         except requests.exceptions.Timeout:
-            print(f"Timeout occurred for {url} on attempt {attempt + 1}/{MAX_RETRIES}")
+            print(f"Timeout occurred for {url} on attempt {attempt + 1}/{max_retries_param}")
         except requests.exceptions.HTTPError as e:
-            print(f"HTTP error for {url} on attempt {attempt + 1}/{MAX_RETRIES}: {e}")
+            print(f"HTTP error for {url} on attempt {attempt + 1}/{max_retries_param}: {e}")
         except requests.exceptions.RequestException as e:
-            print(f"Error fetching URL {url} on attempt {attempt + 1}/{MAX_RETRIES}: {e}")
+            print(f"Error fetching URL {url} on attempt {attempt + 1}/{max_retries_param}: {e}")
         
-        if attempt < MAX_RETRIES - 1:
-            print(f"Waiting {RETRY_DELAY_SECONDS} seconds before retrying...")
-            time.sleep(RETRY_DELAY_SECONDS)
+        if attempt < max_retries_param - 1:
+            print(f"Waiting {retry_delay_param} seconds before retrying...")
+            time.sleep(retry_delay_param)
         else:
             print(f"Max retries reached for {url}. Skipping.")
             
     return None, None, None, raw_html_content, all_page_text_content # Return None for structured data, but potentially raw/all_text if fetched before error
 
-if __name__ == "__main__":
-    # parser = argparse.ArgumentParser(description="Scrape Bible chapters from jw.org.")
-    # parser.add_argument("--books", type=str, help="Comma-separated list of book keys (e.g., genesis,1-kings). Scrapes only these books.")
-    # parser.add_argument("--start_at", type=str, help="Start scraping from this book and chapter (format: book_key:chapter_num, e.g., genesis:5).")
-    # parser.add_argument("--limit", type=int, help="Maximum number of chapters to scrape.")
+def prompt_for_operational_settings(current_settings):
+    """Prompts the user for operational settings and returns them."""
+    print("\n--- Configure Scraping Settings ---")
     
-    # args = parser.parse_args()
+    new_max_retries = current_settings['max_retries']
+    new_retry_delay = current_settings['retry_delay']
+    new_timeout = current_settings['timeout']
+    new_inter_request_delay = current_settings['inter_request_delay']
 
-    # --- Start of new code for selecting URL list ---
+    while True:
+        try:
+            val = input(f"Enter maximum retries per URL (current: {new_max_retries}, default: {MAX_RETRIES}): ").strip()
+            if not val: # User pressed Enter, keep current or default if current is initial default
+                new_max_retries = new_max_retries if new_max_retries != MAX_RETRIES and current_settings['initial_run'] is False else MAX_RETRIES
+            else:
+                new_max_retries = int(val)
+            if new_max_retries < 0:
+                print("Max retries cannot be negative. Please enter a valid number.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    while True:
+        try:
+            val = input(f"Enter delay between retries in seconds (current: {new_retry_delay}, default: {RETRY_DELAY_SECONDS}): ").strip()
+            if not val:
+                new_retry_delay = new_retry_delay if new_retry_delay != RETRY_DELAY_SECONDS and current_settings['initial_run'] is False else RETRY_DELAY_SECONDS
+            else:
+                new_retry_delay = int(val)
+            if new_retry_delay < 0:
+                print("Retry delay cannot be negative. Please enter a valid number.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    while True:
+        try:
+            val = input(f"Enter request timeout in seconds (current: {new_timeout}, default: {REQUEST_TIMEOUT_SECONDS}): ").strip()
+            if not val:
+                new_timeout = new_timeout if new_timeout != REQUEST_TIMEOUT_SECONDS and current_settings['initial_run'] is False else REQUEST_TIMEOUT_SECONDS
+            else:
+                new_timeout = int(val)
+            if new_timeout <= 0:
+                print("Timeout must be a positive number. Please enter a valid number.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    while True:
+        try:
+            val = input(f"Enter delay between successful scrapes in seconds (current: {new_inter_request_delay}, default: {INTER_REQUEST_DELAY_SECONDS}): ").strip()
+            if not val:
+                new_inter_request_delay = new_inter_request_delay if new_inter_request_delay != INTER_REQUEST_DELAY_SECONDS and current_settings['initial_run'] is False else INTER_REQUEST_DELAY_SECONDS
+            else:
+                new_inter_request_delay = int(val)
+            if new_inter_request_delay < 0:
+                print("Inter-request delay cannot be negative. Please enter a valid number.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+            
+    return {
+        'max_retries': new_max_retries,
+        'retry_delay': new_retry_delay,
+        'timeout': new_timeout,
+        'inter_request_delay': new_inter_request_delay,
+        'initial_run': False # Mark that settings have been potentially modified
+    }
+
+if __name__ == "__main__":
+    # Initialize operational settings with defaults
+    operational_settings = {
+        'max_retries': MAX_RETRIES,
+        'retry_delay': RETRY_DELAY_SECONDS,
+        'timeout': REQUEST_TIMEOUT_SECONDS,
+        'inter_request_delay': INTER_REQUEST_DELAY_SECONDS,
+        'initial_run': True # Flag to indicate if settings are still initial defaults
+    }
+
     url_lists_dir = "url_lists"
     available_url_files = []
     try:
@@ -110,27 +186,45 @@ if __name__ == "__main__":
         print(f"No URL list files (ending with '_urls.txt') found in the '{url_lists_dir}' directory. Exiting.")
         exit()
 
-    print("Available Bible versions (from URL lists):")
-    for i, filename in enumerate(available_url_files):
-        # Attempt to derive a cleaner version name for display
-        display_name = filename[:-len("_urls.txt")].replace("_", " ").title()
-        print(f"  {i + 1}: {display_name} (from {filename})")
+    chosen_url_list_filename = None
+    while True: # Loop for version selection / settings configuration
+        print("\nAvailable Bible versions (from URL lists):")
+        for i, filename in enumerate(available_url_files):
+            display_name = filename[:-len("_urls.txt")].replace("_", " ").title()
+            print(f"  {i + 1}: {display_name} (from {filename})")
+        
+        config_option_number = len(available_url_files) + 1
+        print(f"  {config_option_number}: Configure Operational Settings")
 
-    selected_index = -1
-    while True:
         try:
-            choice = input(f"Enter the number of the version to scrape (1-{len(available_url_files)}): ")
-            selected_index = int(choice) - 1
-            if 0 <= selected_index < len(available_url_files):
-                break
+            choice_str = input(f"Enter your choice (1-{config_option_number}): ").strip()
+            if not choice_str: # Handle empty input
+                print("No choice made. Please enter a number.")
+                continue
+            choice = int(choice_str)
+
+            if 1 <= choice <= len(available_url_files):
+                selected_index = choice - 1
+                chosen_url_list_filename = available_url_files[selected_index]
+                print(f"You selected: {chosen_url_list_filename}")
+                break # Exit the loop once a version is chosen
+            elif choice == config_option_number:
+                operational_settings = prompt_for_operational_settings(operational_settings)
+                # Loop continues to re-display the menu
             else:
-                print(f"Invalid choice. Please enter a number between 1 and {len(available_url_files)}.")
+                print(f"Invalid choice. Please enter a number between 1 and {config_option_number}.")
         except ValueError:
             print("Invalid input. Please enter a number.")
 
-    chosen_url_list_filename = available_url_files[selected_index]
+    # Assign final operational settings from the dictionary
+    current_max_retries = operational_settings['max_retries']
+    current_retry_delay = operational_settings['retry_delay']
+    current_timeout = operational_settings['timeout']
+    current_inter_request_delay = operational_settings['inter_request_delay']
+            
+    print(f"\nScript settings: Max Retries={current_max_retries}, Retry Delay={current_retry_delay}s, Timeout={current_timeout}s, Inter-Request Delay={current_inter_request_delay}s")
+
     _URL_LIST_FILE_PATH = os.path.join(url_lists_dir, chosen_url_list_filename)
-    print(f"You selected: {chosen_url_list_filename}")
     # --- End of new code for selecting URL list ---
 
     # --- Start of new interactive prompts for books, start_at, limit ---
@@ -175,16 +269,21 @@ if __name__ == "__main__":
         # Fallback if the pattern is unexpected
         bible_version_identifier = url_list_basename 
 
+    # --- Directory for processed URL files ---
+    PROCESSED_URLS_DIR = "processed_url_lists"
+    os.makedirs(PROCESSED_URLS_DIR, exist_ok=True)
+    # --- End of directory for processed URL files ---
+
     # Dynamically set OUTPUT_FILENAME and PROCESSED_URLS_FILENAME based on the version
     OUTPUT_FILENAME = f"scraped_texts/{bible_version_identifier}_edition.txt"
-    PROCESSED_URLS_FILENAME = f"processed_urls_{bible_version_identifier}.txt"
+    PROCESSED_URLS_FILENAME = os.path.join(PROCESSED_URLS_DIR, f"processed_urls_{bible_version_identifier}.txt")
     
     # This variable is used later to open the file.
     URL_LIST_FILENAME = _URL_LIST_FILE_PATH
 
     RAW_HTML_DIR = "raw_html"
     ALL_TEXT_DIR = "all_text"
-    INTER_REQUEST_DELAY_SECONDS = 1 # Increased delay between successful scrapes
+    # INTER_REQUEST_DELAY_SECONDS is now current_inter_request_delay, defined by prompt
 
     all_urls_to_consider = []
 
@@ -322,26 +421,46 @@ if __name__ == "__main__":
     # The main loop iterates over urls_to_actually_process
     for i, target_url in enumerate(urls_to_scrape):
         print(f"Scraping URL {i+1}/{len(urls_to_scrape)}: {target_url}")
-        book_name, citation, main_text, raw_html, all_text = scrape_website(target_url)
+        # Pass the configured settings to scrape_website
+        book_name, citation, main_text, raw_html, all_text = scrape_website(target_url, current_max_retries, current_retry_delay, current_timeout)
 
-        # Generate filename from URL, now including bible_version_identifier
+        # Generate directory and file names from URL for the new structure
+        book_key_for_dir = "unknown_book" # Default
+        chapter_filename_part = f"file_{i}" # Default
+
         try:
             url_parts = target_url.strip('/').split('/')
-            book_key_fn = url_parts[-2]
-            chapter_num_fn = url_parts[-1]
-            base_filename_for_outputs = f"{bible_version_identifier}_{book_key_fn}_{chapter_num_fn}"
-        except IndexError:
-            print(f"Could not parse URL for filename: {target_url}. Using index.")
-            base_filename_for_outputs = f"{bible_version_identifier}_url_{i}"
+            # Assuming URL structure like .../books/book_key/chapter_num/
+            if len(url_parts) >= 2: 
+                book_key_for_dir = url_parts[-2]
+                chapter_filename_part = url_parts[-1]
+            else:
+                # This case might occur if a URL in the list is not in the expected format
+                print(f"Warning: URL '{target_url}' does not have expected book/chapter segments. Using fallback names.")
+                # Fallback names are already set above, but we could make them more specific if needed
+                # For example, chapter_filename_part = f"malformed_url_{i}"
+        except Exception as e: # Catch any unexpected error during parsing
+            print(f"Error parsing book/chapter from URL '{target_url}': {e}. Using fallback names.")
+            # Fallback names are already set
 
         if raw_html:
-            raw_html_filepath = os.path.join(RAW_HTML_DIR, f"{base_filename_for_outputs}.html")
+            # Construct the target directory path: raw_html/version/book/
+            raw_html_target_dir = os.path.join(RAW_HTML_DIR, bible_version_identifier, book_key_for_dir)
+            os.makedirs(raw_html_target_dir, exist_ok=True)
+            # Filename will now just be chapter_number.html
+            raw_html_filepath = os.path.join(raw_html_target_dir, f"{chapter_filename_part}.html")
+            
             with open(raw_html_filepath, "w", encoding="utf-8") as f_html:
                 f_html.write(raw_html)
             print(f"Saved raw HTML to {raw_html_filepath}")
 
         if all_text:
-            all_text_filepath = os.path.join(ALL_TEXT_DIR, f"{base_filename_for_outputs}.txt")
+            # Construct the target directory path: all_text/version/book/
+            all_text_target_dir = os.path.join(ALL_TEXT_DIR, bible_version_identifier, book_key_for_dir)
+            os.makedirs(all_text_target_dir, exist_ok=True)
+            # Filename will now just be chapter_number.txt
+            all_text_filepath = os.path.join(all_text_target_dir, f"{chapter_filename_part}.txt")
+
             with open(all_text_filepath, "w", encoding="utf-8") as f_all_text:
                 f_all_text.write(all_text)
             print(f"Saved all text to {all_text_filepath}")
@@ -386,7 +505,7 @@ if __name__ == "__main__":
             print(f"No content extracted or error for {target_url} after retries. Check logs above.")
         
         if i < len(urls_to_scrape) - 1: 
-            print(f"Waiting for {INTER_REQUEST_DELAY_SECONDS} seconds...")
-            time.sleep(INTER_REQUEST_DELAY_SECONDS)
+            print(f"Waiting for {current_inter_request_delay} seconds...")
+            time.sleep(current_inter_request_delay)
     
     print(f"Finished scraping. Results saved to {OUTPUT_FILENAME}")
