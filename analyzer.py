@@ -5,7 +5,7 @@ Can count letter frequencies or occurrences of specified names.
 import re
 from collections import Counter
 
-BIBLE_CONTENT_FILE = "bible_text_content.txt"
+BIBLE_CONTENT_FILE = "scraped_texts/study_bible_edition.txt"
 
 
 def read_text_content(file_path):
